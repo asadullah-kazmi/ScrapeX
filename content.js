@@ -1,5 +1,7 @@
 "use strict";
 
+const GOOGLE_APPS_SCRIPT_URL = "PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE";
+
 function addRowCheckboxes() {
   const rows = document.querySelectorAll("tbody tr");
 
@@ -54,6 +56,43 @@ function collectSelectedRows() {
   return result;
 }
 
+async function exportSelectedRows() {
+  const rows = collectSelectedRows();
+
+  if (!rows.length) {
+    alert("No rows selected");
+    return;
+  }
+
+  try {
+    const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ rows }),
+    });
+
+    let responseData = null;
+    try {
+      responseData = await response.json();
+    } catch (_error) {
+      responseData = null;
+    }
+
+    if (!response.ok || (responseData && responseData.success === false)) {
+      const message =
+        (responseData && responseData.message) || "Failed to export data";
+      throw new Error(message);
+    }
+
+    alert("Data exported successfully");
+  } catch (error) {
+    console.error("Export failed:", error);
+    alert("Export failed: " + error.message);
+  }
+}
+
 function createExportButton() {
   if (document.getElementById("scrape-export-button")) {
     return;
@@ -76,7 +115,7 @@ function createExportButton() {
   button.style.cursor = "pointer";
 
   button.addEventListener("click", () => {
-    collectSelectedRows();
+    exportSelectedRows();
   });
 
   document.body.appendChild(button);
