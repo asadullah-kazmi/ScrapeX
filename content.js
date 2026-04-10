@@ -3,6 +3,30 @@
 const GOOGLE_APPS_SCRIPT_URL = "PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE";
 const pendingRows = new Set();
 let isRowProcessingScheduled = false;
+let exportButton = null;
+let isExporting = false;
+
+function getSelectedRowCount() {
+  return document.querySelectorAll("tbody tr .scrape-checkbox:checked").length;
+}
+
+function updateExportButtonState() {
+  if (!exportButton) {
+    return;
+  }
+
+  const selectedCount = getSelectedRowCount();
+  const shouldDisable = isExporting || selectedCount === 0;
+
+  exportButton.disabled = shouldDisable;
+  exportButton.textContent = isExporting
+    ? "Exporting..."
+    : `Export Selected (${selectedCount})`;
+
+  exportButton.style.backgroundColor = shouldDisable ? "#cbd5e1" : "#0f172a";
+  exportButton.style.cursor = shouldDisable ? "not-allowed" : "pointer";
+  exportButton.style.opacity = shouldDisable ? "0.9" : "1";
+}
 
 function injectCheckboxIntoRow(row) {
   if (!(row instanceof HTMLTableRowElement)) {
@@ -32,6 +56,7 @@ function processPendingRows() {
 
   pendingRows.clear();
   isRowProcessingScheduled = false;
+  updateExportButtonState();
 }
 
 function scheduleRowProcessing() {
@@ -120,12 +145,20 @@ function collectSelectedRows() {
 }
 
 async function exportSelectedRows() {
+  if (isExporting) {
+    return;
+  }
+
   const rows = collectSelectedRows();
 
   if (!rows.length) {
     alert("No rows selected");
+    updateExportButtonState();
     return;
   }
+
+  isExporting = true;
+  updateExportButtonState();
 
   try {
     const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
@@ -153,17 +186,23 @@ async function exportSelectedRows() {
   } catch (error) {
     console.error("Export failed:", error);
     alert("Export failed: " + error.message);
+  } finally {
+    isExporting = false;
+    updateExportButtonState();
   }
 }
 
 function createExportButton() {
-  if (document.getElementById("scrape-export-button")) {
+  const existingButton = document.getElementById("scrape-export-button");
+  if (existingButton) {
+    exportButton = existingButton;
+    updateExportButtonState();
     return;
   }
 
   const button = document.createElement("button");
   button.id = "scrape-export-button";
-  button.textContent = "Export Selected";
+  button.textContent = "Export Selected (0)";
   button.type = "button";
 
   button.style.position = "fixed";
@@ -171,10 +210,16 @@ function createExportButton() {
   button.style.right = "16px";
   button.style.zIndex = "2147483647";
   button.style.padding = "10px 14px";
-  button.style.backgroundColor = "#0b5ed7";
+  button.style.backgroundColor = "#0f172a";
   button.style.color = "#ffffff";
-  button.style.border = "none";
-  button.style.borderRadius = "6px";
+  button.style.border = "1px solid #0f172a";
+  button.style.borderRadius = "10px";
+  button.style.fontFamily = "Segoe UI, system-ui, -apple-system, sans-serif";
+  button.style.fontSize = "13px";
+  button.style.fontWeight = "600";
+  button.style.letterSpacing = "0.2px";
+  button.style.boxShadow = "0 8px 24px rgba(15, 23, 42, 0.18)";
+  button.style.transition = "background-color 120ms ease, opacity 120ms ease";
   button.style.cursor = "pointer";
 
   button.addEventListener("click", () => {
@@ -182,9 +227,27 @@ function createExportButton() {
   });
 
   document.body.appendChild(button);
+  exportButton = button;
+  updateExportButtonState();
+}
+
+function bindCheckboxSelectionListener() {
+  document.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) {
+      return;
+    }
+
+    if (!target.classList.contains("scrape-checkbox")) {
+      return;
+    }
+
+    updateExportButtonState();
+  });
 }
 
 addRowCheckboxes();
 observeTableRows();
 createExportButton();
+bindCheckboxSelectionListener();
 console.log("Extension loaded");
