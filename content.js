@@ -1,25 +1,88 @@
 "use strict";
 
 const GOOGLE_APPS_SCRIPT_URL = "PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE";
+const pendingRows = new Set();
+let isRowProcessingScheduled = false;
 
-function addRowCheckboxes() {
-  const rows = document.querySelectorAll("tbody tr");
+function injectCheckboxIntoRow(row) {
+  if (!(row instanceof HTMLTableRowElement)) {
+    return;
+  }
 
-  rows.forEach((row) => {
-    if (row.querySelector(".scrape-checkbox")) {
-      return;
-    }
+  if (row.querySelector(".scrape-checkbox")) {
+    return;
+  }
 
-    const firstCell = row.firstElementChild;
-    if (!firstCell || firstCell.tagName !== "TD") {
-      return;
-    }
+  const firstCell = row.firstElementChild;
+  if (!firstCell || firstCell.tagName !== "TD") {
+    return;
+  }
 
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.classList.add("scrape-checkbox");
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.classList.add("scrape-checkbox");
 
-    firstCell.prepend(checkbox);
+  firstCell.prepend(checkbox);
+}
+
+function processPendingRows() {
+  pendingRows.forEach((row) => {
+    injectCheckboxIntoRow(row);
+  });
+
+  pendingRows.clear();
+  isRowProcessingScheduled = false;
+}
+
+function scheduleRowProcessing() {
+  if (isRowProcessingScheduled) {
+    return;
+  }
+
+  isRowProcessingScheduled = true;
+  requestAnimationFrame(processPendingRows);
+}
+
+function queueRowForCheckbox(row) {
+  if (!(row instanceof HTMLTableRowElement)) {
+    return;
+  }
+
+  pendingRows.add(row);
+  scheduleRowProcessing();
+}
+
+function addRowCheckboxes(root = document) {
+  const rows = root.querySelectorAll("tbody tr");
+  rows.forEach((row) => queueRowForCheckbox(row));
+}
+
+function observeTableRows() {
+  const observerTarget = document.body;
+  if (!observerTarget) {
+    return;
+  }
+
+  const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      mutation.addedNodes.forEach((node) => {
+        if (!(node instanceof Element)) {
+          return;
+        }
+
+        if (node.matches("tbody tr")) {
+          queueRowForCheckbox(node);
+        }
+
+        const nestedRows = node.querySelectorAll("tbody tr");
+        nestedRows.forEach((row) => queueRowForCheckbox(row));
+      });
+    });
+  });
+
+  observer.observe(observerTarget, {
+    childList: true,
+    subtree: true,
   });
 }
 
@@ -122,5 +185,6 @@ function createExportButton() {
 }
 
 addRowCheckboxes();
+observeTableRows();
 createExportButton();
 console.log("Extension loaded");
