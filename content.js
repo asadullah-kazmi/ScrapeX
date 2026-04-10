@@ -22,10 +22,36 @@ function addRowCheckboxes() {
 }
 
 function collectSelectedRows() {
-  const selectedRows = document.querySelectorAll(
-    "tbody tr:has(.scrape-checkbox:checked)",
-  );
-  return Array.from(selectedRows);
+  const rows = document.querySelectorAll("tbody tr");
+  const result = [];
+
+  rows.forEach((row) => {
+    const checkbox = row.querySelector(".scrape-checkbox");
+    if (!checkbox || !checkbox.checked) {
+      return;
+    }
+
+    const cells = row.querySelectorAll("td");
+    if (cells.length < 3) {
+      return;
+    }
+
+    const getCellText = (cell) => {
+      const clone = cell.cloneNode(true);
+      clone
+        .querySelectorAll(".scrape-checkbox")
+        .forEach((node) => node.remove());
+      return clone.textContent.replace(/\s+/g, " ").trim();
+    };
+
+    const position = getCellText(cells[0]);
+    const partNumber = getCellText(cells[1]);
+    const description = getCellText(cells[2]);
+
+    result.push([position, partNumber, description]);
+  });
+
+  return result;
 }
 
 function createExportButton() {
