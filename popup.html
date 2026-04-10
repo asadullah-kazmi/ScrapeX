@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Part2Sheet Settings</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="card">
+      <h1>Part2Sheet</h1>
+      <p class="subtitle">Configure where exported rows should be sent.</p>
+
+      <label for="appsScriptUrl">Apps Script Web App URL</label>
+      <input
+        id="appsScriptUrl"
+        type="url"
+        placeholder="https://script.google.com/macros/s/.../exec"
+        autocomplete="off"
+      />
+
+      <label for="sheetUrl">Google Sheet Link</label>
+      <input
+        id="sheetUrl"
+        type="url"
+        placeholder="https://docs.google.com/spreadsheets/d/..."
+        autocomplete="off"
+      />
+
+      <p class="hint">
+        Use a deployed Apps Script URL linked to your sheet. Sheet link is
+        optional but recommended.
+      </p>
+
+      <button id="saveButton" type="button">Save Settings</button>
+      <p id="statusMessage" class="status" aria-live="polite"></p>
+    </main>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

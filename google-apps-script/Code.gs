@@ -1,9 +1,13 @@
 /**
- * Web app endpoint for appending POSTed JSON rows to the active sheet.
+ * Web app endpoint for appending POSTed JSON rows to Google Sheets.
  *
  * Supported payload examples:
  * 1) [["01", "31 10 6 861 106", "Front axle support"]]
  * 2) {"rows": [["01", "31 10 6 861 106", "Front axle support"]]}
+ * 3) {
+ *      "rows": [["01", "31 10 6 861 106", "Front axle support"]],
+ *      "spreadsheetId": "1AbCdEf..."
+ *    }
  */
 function doPost(e) {
   try {
@@ -16,6 +20,10 @@ function doPost(e) {
 
     var payload = JSON.parse(e.postData.contents);
     var rows = normalizeRows(payload);
+    var spreadsheetId =
+      payload && typeof payload.spreadsheetId === "string"
+        ? payload.spreadsheetId.trim()
+        : "";
 
     if (!rows.length) {
       return jsonResponse({
@@ -24,7 +32,7 @@ function doPost(e) {
       });
     }
 
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var sheet = getTargetSheet(spreadsheetId);
     var startRow = sheet.getLastRow() + 1;
     var numRows = rows.length;
     var numCols = rows[0].length;
@@ -42,6 +50,14 @@ function doPost(e) {
       message: error.message,
     });
   }
+}
+
+function getTargetSheet(spreadsheetId) {
+  if (spreadsheetId) {
+    return SpreadsheetApp.openById(spreadsheetId).getActiveSheet();
+  }
+
+  return SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
 }
 
 function normalizeRows(payload) {

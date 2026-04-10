@@ -4,10 +4,16 @@
   "version": "1.0",
   "description": "Runs on partslink24 pages.",
   "minimum_chrome_version": "114",
-  "permissions": ["activeTab", "scripting"],
+  "permissions": ["activeTab", "scripting", "storage"],
+  "action": {
+    "default_title": "Part2Sheet Settings",
+    "default_popup": "popup.html"
+  },
   "host_permissions": [
     "https://partslink24.com/*",
-    "https://*.partslink24.com/*"
+    "https://*.partslink24.com/*",
+    "https://script.google.com/*",
+    "https://script.googleusercontent.com/*"
   ],
   "content_scripts": [
     {

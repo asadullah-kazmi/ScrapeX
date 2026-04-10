@@ -1,13 +1,86 @@
 "use strict";
 
-const GOOGLE_APPS_SCRIPT_URL = "PASTE_YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE";
-const pendingRows = new Set();
-let isRowProcessingScheduled = false;
+const STORAGE_KEYS = {
+  appsScriptUrl: "appsScriptUrl",
+  sheetUrl: "sheetUrl",
+};
+const pendingTargets = new Set();
+let isTargetProcessingScheduled = false;
 let exportButton = null;
 let isExporting = false;
+const MAINTENANCE_INTERVAL_MS = 1500;
+
+function getStorageValues(keys) {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(keys, (result) => {
+      resolve(result || {});
+    });
+  });
+}
+
+function extractSpreadsheetId(sheetUrl) {
+  if (typeof sheetUrl !== "string") {
+    return "";
+  }
+
+  const match = sheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  return match ? match[1] : "";
+}
+
+async function getExportConfig() {
+  const settings = await getStorageValues([
+    STORAGE_KEYS.appsScriptUrl,
+    STORAGE_KEYS.sheetUrl,
+  ]);
+
+  const appsScriptUrl =
+    typeof settings[STORAGE_KEYS.appsScriptUrl] === "string"
+      ? settings[STORAGE_KEYS.appsScriptUrl].trim()
+      : "";
+  const sheetUrl =
+    typeof settings[STORAGE_KEYS.sheetUrl] === "string"
+      ? settings[STORAGE_KEYS.sheetUrl].trim()
+      : "";
+  const spreadsheetId = extractSpreadsheetId(sheetUrl);
+
+  return { appsScriptUrl, sheetUrl, spreadsheetId };
+}
+
+function getSearchRoots() {
+  const roots = [document];
+  const rootElement = document.documentElement;
+  if (!rootElement) {
+    return roots;
+  }
+
+  const walker = document.createTreeWalker(
+    rootElement,
+    NodeFilter.SHOW_ELEMENT,
+  );
+  let node = walker.currentNode;
+  while (node) {
+    if (node.shadowRoot) {
+      roots.push(node.shadowRoot);
+    }
+
+    node = walker.nextNode();
+  }
+
+  return roots;
+}
+
+function queryAllAcrossRoots(selector) {
+  const matches = [];
+
+  getSearchRoots().forEach((root) => {
+    root.querySelectorAll(selector).forEach((node) => matches.push(node));
+  });
+
+  return matches;
+}
 
 function getSelectedRowCount() {
-  return document.querySelectorAll("tbody tr .scrape-checkbox:checked").length;
+  return queryAllAcrossRoots(".scrape-checkbox:checked").length;
 }
 
 function updateExportButtonState() {
@@ -28,7 +101,7 @@ function updateExportButtonState() {
   exportButton.style.opacity = shouldDisable ? "0.9" : "1";
 }
 
-function injectCheckboxIntoRow(row) {
+function injectCheckboxIntoTableRow(row) {
   if (!(row instanceof HTMLTableRowElement)) {
     return;
   }
@@ -49,41 +122,147 @@ function injectCheckboxIntoRow(row) {
   firstCell.prepend(checkbox);
 }
 
-function processPendingRows() {
-  pendingRows.forEach((row) => {
-    injectCheckboxIntoRow(row);
+function injectCheckboxIntoPartCard(card) {
+  if (!(card instanceof HTMLElement)) {
+    return;
+  }
+
+  if (card.querySelector(":scope > .scrape-checkbox-wrap")) {
+    return;
+  }
+
+  const computedPosition = window.getComputedStyle(card).position;
+  if (computedPosition === "static") {
+    card.style.position = "relative";
+  }
+
+  const wrap = document.createElement("label");
+  wrap.className = "scrape-checkbox-wrap";
+  wrap.style.position = "absolute";
+  wrap.style.top = "8px";
+  wrap.style.right = "8px";
+  wrap.style.zIndex = "5";
+  wrap.style.background = "#ffffff";
+  wrap.style.border = "1px solid #cbd5e1";
+  wrap.style.borderRadius = "6px";
+  wrap.style.padding = "4px";
+  wrap.style.boxShadow = "0 1px 2px rgba(15, 23, 42, 0.12)";
+
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.classList.add("scrape-checkbox");
+  checkbox.style.display = "block";
+  checkbox.style.margin = "0";
+
+  wrap.appendChild(checkbox);
+  card.prepend(wrap);
+}
+
+function injectCheckboxIntoTarget(target) {
+  if (!(target instanceof Element)) {
+    return;
+  }
+
+  const targetType = target.getAttribute("data-scrape-target-type");
+  if (targetType === "row") {
+    injectCheckboxIntoTableRow(target);
+    return;
+  }
+
+  if (targetType === "card") {
+    injectCheckboxIntoPartCard(target);
+  }
+}
+
+function processPendingTargets() {
+  pendingTargets.forEach((target) => {
+    injectCheckboxIntoTarget(target);
   });
 
-  pendingRows.clear();
-  isRowProcessingScheduled = false;
+  pendingTargets.clear();
+  isTargetProcessingScheduled = false;
   updateExportButtonState();
 }
 
-function scheduleRowProcessing() {
-  if (isRowProcessingScheduled) {
+function scheduleTargetProcessing() {
+  if (isTargetProcessingScheduled) {
     return;
   }
 
-  isRowProcessingScheduled = true;
-  requestAnimationFrame(processPendingRows);
+  isTargetProcessingScheduled = true;
+  requestAnimationFrame(processPendingTargets);
 }
 
-function queueRowForCheckbox(row) {
-  if (!(row instanceof HTMLTableRowElement)) {
+function queueTargetForCheckbox(target) {
+  if (!(target instanceof Element)) {
     return;
   }
 
-  pendingRows.add(row);
-  scheduleRowProcessing();
+  pendingTargets.add(target);
+  scheduleTargetProcessing();
 }
 
-function addRowCheckboxes(root = document) {
-  const rows = root.querySelectorAll("tbody tr");
-  rows.forEach((row) => queueRowForCheckbox(row));
+function addTableRowCheckboxes(root = document) {
+  const rows =
+    root === document
+      ? queryAllAcrossRoots("tbody tr")
+      : root.querySelectorAll("tbody tr");
+  rows.forEach((row) => {
+    row.setAttribute("data-scrape-target-type", "row");
+    queueTargetForCheckbox(row);
+  });
+}
+
+function normalizeWhitespace(text) {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function looksLikePartInfoCard(element) {
+  if (!(element instanceof HTMLElement)) {
+    return false;
+  }
+
+  const text = normalizeWhitespace(element.textContent || "").toLowerCase();
+  if (!text) {
+    return false;
+  }
+
+  return (
+    text.includes("part information") &&
+    text.includes("pos") &&
+    text.includes("part no") &&
+    text.includes("description")
+  );
+}
+
+function addPartCardCheckboxes(root = document) {
+  const candidates =
+    root === document
+      ? queryAllAcrossRoots("div, section, article, li")
+      : root.querySelectorAll("div, section, article, li");
+
+  candidates.forEach((element) => {
+    if (!looksLikePartInfoCard(element)) {
+      return;
+    }
+
+    const textLength = normalizeWhitespace(element.textContent || "").length;
+    if (textLength > 420) {
+      return;
+    }
+
+    element.setAttribute("data-scrape-target-type", "card");
+    queueTargetForCheckbox(element);
+  });
+}
+
+function addScrapeCheckboxes(root = document) {
+  addTableRowCheckboxes(root);
+  addPartCardCheckboxes(root);
 }
 
 function observeTableRows() {
-  const observerTarget = document.body;
+  const observerTarget = document.documentElement;
   if (!observerTarget) {
     return;
   }
@@ -96,11 +275,11 @@ function observeTableRows() {
         }
 
         if (node.matches("tbody tr")) {
-          queueRowForCheckbox(node);
+          node.setAttribute("data-scrape-target-type", "row");
+          queueTargetForCheckbox(node);
         }
 
-        const nestedRows = node.querySelectorAll("tbody tr");
-        nestedRows.forEach((row) => queueRowForCheckbox(row));
+        addScrapeCheckboxes(node);
       });
     });
   });
@@ -112,33 +291,71 @@ function observeTableRows() {
 }
 
 function collectSelectedRows() {
-  const rows = document.querySelectorAll("tbody tr");
   const result = [];
 
-  rows.forEach((row) => {
-    const checkbox = row.querySelector(".scrape-checkbox");
-    if (!checkbox || !checkbox.checked) {
+  const checkedBoxes = queryAllAcrossRoots(".scrape-checkbox:checked");
+  checkedBoxes.forEach((checkbox) => {
+    const target = checkbox.closest("[data-scrape-target-type]");
+    if (!target) {
       return;
     }
 
-    const cells = row.querySelectorAll("td");
-    if (cells.length < 3) {
+    const targetType = target.getAttribute("data-scrape-target-type");
+    if (targetType === "row") {
+      const cells = target.querySelectorAll("td");
+      if (cells.length < 3) {
+        return;
+      }
+
+      const getCellText = (cell) => {
+        const clone = cell.cloneNode(true);
+        clone
+          .querySelectorAll(".scrape-checkbox, .scrape-checkbox-wrap")
+          .forEach((node) => node.remove());
+        return normalizeWhitespace(clone.textContent || "");
+      };
+
+      const position = getCellText(cells[0]);
+      const partNumber = getCellText(cells[1]);
+      const description = getCellText(cells[2]);
+
+      result.push([position, partNumber, description]);
       return;
     }
 
-    const getCellText = (cell) => {
-      const clone = cell.cloneNode(true);
-      clone
-        .querySelectorAll(".scrape-checkbox")
+    if (targetType === "card") {
+      const clonedTarget = target.cloneNode(true);
+      clonedTarget
+        .querySelectorAll(".scrape-checkbox, .scrape-checkbox-wrap")
         .forEach((node) => node.remove());
-      return clone.textContent.replace(/\s+/g, " ").trim();
-    };
 
-    const position = getCellText(cells[0]);
-    const partNumber = getCellText(cells[1]);
-    const description = getCellText(cells[2]);
+      const text = normalizeWhitespace(clonedTarget.textContent || "");
+      const positionMatch = text.match(
+        /Pos\.?\s*([\w-]+)(?=\s+Part\s*no\.?|\s+Description|$)/i,
+      );
+      const partNumberMatch = text.match(
+        /Part\s*no\.?\s*([^]+?)(?=\s+Description|\s+Supplement|\s+Unit|\s+AE|$)/i,
+      );
+      const descriptionMatch = text.match(
+        /Description\s*([^]+?)(?=\s+Supplement|\s+Unit|\s+AE|$)/i,
+      );
 
-    result.push([position, partNumber, description]);
+      const position = positionMatch
+        ? normalizeWhitespace(positionMatch[1])
+        : "";
+      const partNumber = partNumberMatch
+        ? normalizeWhitespace(partNumberMatch[1])
+        : "";
+      const description = descriptionMatch
+        ? normalizeWhitespace(descriptionMatch[1])
+        : "";
+
+      if (!position && !partNumber && !description) {
+        return;
+      }
+
+      result.push([position, partNumber, description]);
+    }
   });
 
   return result;
@@ -161,12 +378,23 @@ async function exportSelectedRows() {
   updateExportButtonState();
 
   try {
-    const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
+    const config = await getExportConfig();
+    if (!config.appsScriptUrl) {
+      throw new Error(
+        "Missing Apps Script URL. Open Part2Sheet extension popup and save your Apps Script Web App URL.",
+      );
+    }
+
+    const response = await fetch(config.appsScriptUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ rows }),
+      body: JSON.stringify({
+        rows,
+        spreadsheetId: config.spreadsheetId,
+        sheetUrl: config.sheetUrl,
+      }),
     });
 
     let responseData = null;
@@ -246,8 +474,19 @@ function bindCheckboxSelectionListener() {
   });
 }
 
-addRowCheckboxes();
+function ensureExtensionMounted() {
+  createExportButton();
+  addScrapeCheckboxes();
+}
+
+function startMaintenanceLoop() {
+  window.setInterval(() => {
+    ensureExtensionMounted();
+  }, MAINTENANCE_INTERVAL_MS);
+}
+
+ensureExtensionMounted();
 observeTableRows();
-createExportButton();
 bindCheckboxSelectionListener();
+startMaintenanceLoop();
 console.log("Extension loaded");
