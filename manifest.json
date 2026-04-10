@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Part2Sheet",
+  "version": "1.0",
+  "description": "Runs on partslink24 pages.",
+  "minimum_chrome_version": "114",
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": ["https://partslink24.com/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://partslink24.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
