@@ -3,37 +3,28 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Part2Sheet Settings</title>
+    <title>Part2Sheet</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
     <main class="card">
       <h1>Part2Sheet</h1>
-      <p class="subtitle">Configure where exported rows should be sent.</p>
-
-      <label for="appsScriptUrl">Apps Script Web App URL</label>
-      <input
-        id="appsScriptUrl"
-        type="url"
-        placeholder="https://script.google.com/macros/s/.../exec"
-        autocomplete="off"
-      />
-
-      <label for="sheetUrl">Google Sheet Link</label>
-      <input
-        id="sheetUrl"
-        type="url"
-        placeholder="https://docs.google.com/spreadsheets/d/..."
-        autocomplete="off"
-      />
-
-      <p class="hint">
-        Use a deployed Apps Script URL linked to your sheet. Sheet link is
-        optional but recommended.
+      <p class="subtitle">
+        Copy selected parts and paste manually into your sheet.
       </p>
 
-      <button id="saveButton" type="button">Save Settings</button>
-      <p id="statusMessage" class="status" aria-live="polite"></p>
+      <ol class="steps">
+        <li>Open a parts page on partslink24.</li>
+        <li>Select rows using the row checkboxes.</li>
+        <li>Click Export Selected on the page.</li>
+        <li>In Scraped Data panel, click Copy All Rows.</li>
+        <li>Paste in Google Sheets (Ctrl+V).</li>
+      </ol>
+
+      <button id="openGuideButton" type="button">How Copy Format Works</button>
+      <p id="statusMessage" class="status" aria-live="polite">
+        Columns copied: Position, Part Number, Description
+      </p>
     </main>
 
     <script src="popup.js"></script>
