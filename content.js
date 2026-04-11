@@ -4,14 +4,30 @@ const pendingTargets = new Set();
 let isTargetProcessingScheduled = false;
 let exportButton = null;
 let isExporting = false;
-const MAINTENANCE_INTERVAL_MS = 1500;
+const MAINTENANCE_INTERVAL_MS = 10000;
+const ROOT_CACHE_TTL_MS = 3000;
+const DISCOVERY_DEBOUNCE_MS = 250;
 const customSheetRows = [];
 let sheetOverlay = null;
 let sheetTableBody = null;
 let sheetRowCount = null;
 let sheetStatus = null;
+let cachedSearchRoots = [];
+let searchRootsCacheTime = 0;
+let searchRootsDirty = true;
+let discoveryTimerId = null;
+const pendingDiscoveryRoots = new Set();
 
 function getSearchRoots() {
+  const now = Date.now();
+  if (
+    !searchRootsDirty &&
+    cachedSearchRoots.length > 0 &&
+    now - searchRootsCacheTime < ROOT_CACHE_TTL_MS
+  ) {
+    return cachedSearchRoots;
+  }
+
   const roots = [];
   const visited = new Set();
 
@@ -51,7 +67,41 @@ function getSearchRoots() {
   };
 
   collectFromDocument(document);
-  return roots;
+  cachedSearchRoots = roots;
+  searchRootsCacheTime = now;
+  searchRootsDirty = false;
+  return cachedSearchRoots;
+}
+
+function markSearchRootsDirty() {
+  searchRootsDirty = true;
+}
+
+function scheduleDiscovery(root = document) {
+  if (root === document || root instanceof Element) {
+    pendingDiscoveryRoots.add(root);
+  }
+
+  markSearchRootsDirty();
+
+  if (discoveryTimerId) {
+    return;
+  }
+
+  discoveryTimerId = window.setTimeout(() => {
+    const rootsToScan = Array.from(pendingDiscoveryRoots);
+    pendingDiscoveryRoots.clear();
+    discoveryTimerId = null;
+
+    if (rootsToScan.length > 20) {
+      addScrapeCheckboxes();
+      return;
+    }
+
+    rootsToScan.forEach((scanRoot) => {
+      addScrapeCheckboxes(scanRoot === document ? document : scanRoot);
+    });
+  }, DISCOVERY_DEBOUNCE_MS);
 }
 
 function queryAllAcrossRoots(selector) {
@@ -1112,6 +1162,8 @@ function observeTableRows() {
   }
 
   const observer = new MutationObserver((mutations) => {
+    markSearchRootsDirty();
+
     mutations.forEach((mutation) => {
       mutation.addedNodes.forEach((node) => {
         if (!(node instanceof Element)) {
@@ -1123,7 +1175,7 @@ function observeTableRows() {
           queueTargetForCheckbox(node);
         }
 
-        addScrapeCheckboxes(node);
+        scheduleDiscovery(node);
       });
     });
   });
@@ -1364,7 +1416,9 @@ function bindCheckboxSelectionListener() {
 
 function ensureExtensionMounted() {
   createExportButton();
-  addScrapeCheckboxes();
+  if (queryAllAcrossRoots(".scrape-checkbox").length === 0) {
+    scheduleDiscovery(document);
+  }
 }
 
 function startMaintenanceLoop() {
@@ -1373,6 +1427,7 @@ function startMaintenanceLoop() {
   }, MAINTENANCE_INTERVAL_MS);
 }
 
+scheduleDiscovery(document);
 ensureExtensionMounted();
 observeTableRows();
 bindCheckboxSelectionListener();
